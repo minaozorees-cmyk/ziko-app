@@ -1,8 +1,8 @@
-/* zeko - Service Worker (v56)
+/* zeko - Service Worker (v58)
    - يخزّن ملفات التطبيق للعمل أوفلاين
    - لا يتدخل في طلبات تليجرام أو أي API (تمر مباشرة للشبكة)
    - عند تغيير CACHE_VERSION يتم تحديث النسخة المخزنة تلقائياً */
-const CACHE_VERSION = 'zeko-v56';
+const CACHE_VERSION = 'zeko-v58';
 const APP_SHELL = ['./', 'index.html', 'manifest.json', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
 const CDN_HOSTS = ['cdnjs.cloudflare.com'];
 
