@@ -131,6 +131,18 @@
   body.light-theme #loginScreen{
     --nm-bg:#dde1e7; --nm-dark:#babecc; --nm-light:rgba(255,255,255,.75); --nm-text:#595959; --nm-muted:#666666; --nm-accent:#3498db;
   }
+  #licenseGate{
+    --nm-bg:#14264a; --nm-dark:#0a1428; --nm-light:#1f3a6b; --nm-text:#c9d6ee; --nm-muted:#8ea0c2; --nm-accent:var(--amber);
+    display:none; position:fixed; inset:0; z-index:100000; align-items:center; justify-content:center; padding:20px; overflow:auto;
+    background:var(--nm-bg);
+  }
+  body.light-theme #licenseGate{ --nm-bg:#dde1e7; --nm-dark:#babecc; --nm-light:rgba(255,255,255,.75); --nm-text:#595959; --nm-muted:#666666; --nm-accent:#3498db; }
+  #licenseGate .nm-field{margin-bottom:12px;}
+  #licenseGate .nm-field input{padding:0 18px; font-size:15px; direction:ltr; text-align:left;}
+  #licenseGate .nm-field label{right:18px;}
+  #licenseGate .nm-login-btn.sm{height:46px; font-size:15px; margin:8px 0;}
+  #licenseGate hr{border:none; height:1px; background:var(--nm-dark); opacity:.5; margin:18px 0 14px;}
+  #licenseLine.warn{color:var(--amber); font-weight:700;}
   .nm-login{
     width:100%; max-width:360px; padding:40px 30px 28px; text-align:center;
     background:var(--nm-bg); border-radius:18px;
@@ -610,7 +622,33 @@
 
     <div class="err" id="loginErr"></div>
 
+    <p class="nm-credit" id="licenseLine"></p>
     <p class="nm-credit">تم إنشاؤه بواسطة أ. مينا اوزريس</p>
+  </div>
+</div>
+
+<!-- شاشة انتهاء الفترة التجريبية / الاشتراك (v57) -->
+<div id="licenseGate">
+  <div class="nm-login">
+    <div class="nm-logo">🔒</div>
+    <h2 id="licGateTitle">انتهت الفترة التجريبية</h2>
+    <p class="nm-sub" id="licGateMsg"></p>
+    <div class="nm-field">
+      <input type="text" id="licGateCode" placeholder=" " autocomplete="off" autocapitalize="off" spellcheck="false" onkeydown="if(event.key==='Enter')licActivate('licGateCode','licGateErr')">
+      <label for="licGateCode">كود التفعيل</label>
+    </div>
+    <button class="nm-login-btn" onclick="licActivate('licGateCode','licGateErr')">تفعيل</button>
+    <div class="err" id="licGateErr"></div>
+    <hr>
+    <p class="nm-sub" style="margin-bottom:10px;">بياناتك محفوظة ولن تُحذف. يمكنك تصدير نسخة احتياطية بكلمة مرور المالك:</p>
+    <div class="nm-field">
+      <input type="password" id="licGatePass" placeholder=" " autocomplete="current-password" style="direction:rtl; text-align:right;">
+      <label for="licGatePass">كلمة مرور المالك</label>
+    </div>
+    <button class="nm-login-btn sm" onclick="licGateExport()">📥 تصدير نسخة احتياطية</button>
+    <div class="err" id="licGateExportErr"></div>
+    <p class="nm-credit" id="licGateContact"></p>
+    <a id="licGateWhatsapp" class="nm-login-btn sm" style="display:block; text-decoration:none; text-align:center; line-height:46px;" target="_blank" rel="noopener">💬 تواصل عبر واتساب</a>
   </div>
 </div>
 
@@ -1846,6 +1884,14 @@
     <h3>⚙️ الإعدادات</h3>
 
     <div class="settings-section">
+      <h4>🔐 الاشتراك والترخيص</h4>
+      <div id="licSettingsStatus" style="font-size:13px; margin-bottom:10px; line-height:1.9;"></div>
+      <div class="field"><label>كود التفعيل / التجديد</label><input type="text" id="licSettingsCode" placeholder="الصق الكود هنا" dir="ltr" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+      <button class="btn btn-amber" style="width:100%" onclick="licActivate('licSettingsCode','licSettingsErr')">تفعيل الكود</button>
+      <div class="err" id="licSettingsErr"></div>
+    </div>
+
+    <div class="settings-section">
       <h4>🔑 كلمة مرور المالك</h4>
       <div class="field"><label>كلمة المرور الحالية</label><input type="password" id="curOwnerPass" placeholder="••••"></div>
       <div class="field"><label>كلمة المرور الجديدة</label><input type="password" id="newOwnerPass" placeholder="••••"></div>
@@ -2250,6 +2296,163 @@ function _flushToIdb(){
 function flushPendingSave(){ if(_idbDirty) _flushToIdb(); }
 window.addEventListener('pagehide', flushPendingSave);
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'hidden') flushPendingSave(); });
+
+
+/* ============================================================
+   🔐 نظام الترخيص (v57): فترة تجريبية 90 يوم ثم اشتراك بكود تفعيل
+   - الكود موقَّع بمفتاح عام/خاص (ECDSA P-256): المفتاح الخاص عند المطوّر فقط في أداة "مولّد الأكواد"،
+     والتطبيق يحمل المفتاح العام للتحقق فقط، فلا يمكن تزوير كود من داخل الملف.
+   - يعمل بدون سيرفر. الترخيص مخزّن منفصلاً عن بيانات المحل (لا يتأثر بالاستيراد/التصدير).
+   - عند الانتهاء: يُقفل التطبيق مع بقاء إمكانية تصدير نسخة احتياطية (البيانات لا تُحتجز).
+   ============================================================ */
+const LICENSE_PUBLIC_KEY = 'BJYWhgHGJEC8D980GGFgCzqkTkgylPMUrOyMAxoKPpvaDoYpScHkFnWSNX6Ghr3lsEB2EvYYSXqcz8nbmOWgfAs';
+const LICENSE_TRIAL_DAYS = 90;
+const LICENSE_WARN_DAYS = 14;
+const LICENSE_CONTACT_TEXT = 'للاشتراك أو التجديد تواصل مع: ا. مينا اوزريس - 01273770374';
+const LICENSE_WHATSAPP_URL = 'https://wa.me/201273770374?text=' + encodeURIComponent('مرحباً، أريد الاشتراك في zeko');
+const LICENSE_LS_KEY = 'zeko_license_v1';
+let _lic = null;          // { trialStart, lastSeen, codes: [] }
+let licenseState = null;  // { state: 'trial'|'active'|'expired', daysLeft, expiry, client }
+let _licWarned = false;
+
+function _b64uToBytes(str){
+  str = String(str).replace(/-/g,'+').replace(/_/g,'/');
+  while(str.length % 4) str += '=';
+  const bin = atob(str);
+  const u = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
+}
+async function licVerifyCode(code){
+  try{
+    const parts = String(code || '').replace(/\s+/g,'').split('.');
+    if(parts.length !== 2) return { ok:false, reason:'format' };
+    const payloadBytes = _b64uToBytes(parts[0]);
+    const sig = _b64uToBytes(parts[1]);
+    const key = await crypto.subtle.importKey('raw', _b64uToBytes(LICENSE_PUBLIC_KEY), { name:'ECDSA', namedCurve:'P-256' }, false, ['verify']);
+    const ok = await crypto.subtle.verify({ name:'ECDSA', hash:'SHA-256' }, key, sig, payloadBytes);
+    if(!ok) return { ok:false, reason:'sig' };
+    const p = JSON.parse(new TextDecoder().decode(payloadBytes));
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(p.e)) return { ok:false, reason:'format' };
+    return { ok:true, client: p.n || '', expiry: new Date(p.e + 'T23:59:59'), id: p.i || '' };
+  } catch(e){ return { ok:false, reason:'format' }; }
+}
+async function licLoad(){
+  let a = null, b = null;
+  try{ if(_idb) a = await idbGet(IDB_STORE_MAIN, 'license'); } catch(e){}
+  try{ b = JSON.parse(localStorage.getItem(LICENSE_LS_KEY) || 'null'); } catch(e){}
+  const m = { trialStart: null, lastSeen: 0, codes: [] };
+  [a, b].forEach(x=>{
+    if(!x || typeof x !== 'object') return;
+    if(x.trialStart && (!m.trialStart || x.trialStart < m.trialStart)) m.trialStart = x.trialStart; // الأقدم يكسب
+    if(x.lastSeen > m.lastSeen) m.lastSeen = x.lastSeen;                                          // الأحدث يكسب
+    (x.codes || []).forEach(c=>{ if(c && !m.codes.includes(c)) m.codes.push(c); });
+  });
+  _lic = m;
+}
+async function licSave(){
+  const rec = { trialStart: _lic.trialStart, lastSeen: _lic.lastSeen, codes: _lic.codes };
+  try{ if(_idb) await idbPut(IDB_STORE_MAIN, 'license', rec); } catch(e){}
+  try{ localStorage.setItem(LICENSE_LS_KEY, JSON.stringify(rec)); } catch(e){}
+}
+async function licRefresh(){
+  if(!_lic) await licLoad();
+  const realNow = Date.now();
+  if(!_lic.trialStart) _lic.trialStart = realNow;          // أول تشغيل: بداية الفترة التجريبية
+  const now = Math.max(realNow, _lic.lastSeen || 0);       // رجوع ساعة الجهاز للخلف لا يطيل الفترة
+  _lic.lastSeen = now;
+  let expiry = new Date(_lic.trialStart + LICENSE_TRIAL_DAYS * 86400000);
+  let paid = false, client = '';
+  for(const c of _lic.codes){
+    const r = await licVerifyCode(c);
+    if(r.ok && r.expiry > expiry){ expiry = r.expiry; paid = true; client = r.client; }
+  }
+  const msLeft = expiry.getTime() - now;
+  licenseState = {
+    state: msLeft <= 0 ? 'expired' : (paid ? 'active' : 'trial'),
+    daysLeft: Math.max(Math.ceil(msLeft / 86400000), 0),
+    expiry, client, paid
+  };
+  await licSave();
+  return licenseState;
+}
+function _licDateStr(d){
+  try{ return d.toLocaleDateString('ar-EG', { year:'numeric', month:'long', day:'numeric' }); } catch(e){ return d.toISOString().slice(0,10); }
+}
+function licRenderUI(){
+  const st = licenseState; if(!st) return;
+  const line = document.getElementById('licenseLine');
+  if(line){
+    let t = '';
+    if(st.state === 'trial') t = 'الفترة التجريبية: متبقي ' + st.daysLeft + ' يوم';
+    else if(st.state === 'active') t = 'الاشتراك فعّال حتى ' + _licDateStr(st.expiry);
+    line.textContent = t;
+    line.classList.toggle('warn', st.state !== 'expired' && st.daysLeft <= LICENSE_WARN_DAYS);
+  }
+  const box = document.getElementById('licSettingsStatus');
+  if(box){
+    const label = st.state === 'trial' ? '🧪 فترة تجريبية' : (st.state === 'active' ? '✅ اشتراك فعّال' : '⛔ منتهي');
+    box.innerHTML = '<b>' + label + '</b><br>ينتهي في: ' + _licDateStr(st.expiry) + ' (متبقي ' + st.daysLeft + ' يوم)'
+      + (st.client ? '<br>مسجَّل باسم: ' + esc(st.client) : '')
+      + '<br><span style="color:var(--muted); font-size:12px;">' + LICENSE_CONTACT_TEXT + '</span>';
+  }
+}
+function licShowGate(){
+  const st = licenseState || {};
+  document.getElementById('licGateTitle').textContent = st.paid ? 'انتهى الاشتراك' : 'انتهت الفترة التجريبية';
+  document.getElementById('licGateMsg').textContent = 'للاستمرار في استخدام zeko أدخل كود التفعيل.';
+  document.getElementById('licGateContact').textContent = LICENSE_CONTACT_TEXT;
+  document.getElementById('licGateWhatsapp').href = LICENSE_WHATSAPP_URL;
+  document.getElementById('licenseGate').style.display = 'flex';
+}
+function licHideGate(){ const g = document.getElementById('licenseGate'); if(g) g.style.display = 'none'; }
+async function licEnforce(){
+  try{
+    const st = await licRefresh();
+    licRenderUI();
+    if(st.state === 'expired') licShowGate(); else licHideGate();
+    if(st.state !== 'expired' && st.daysLeft <= LICENSE_WARN_DAYS && !_licWarned && currentUser && typeof showToast === 'function'){
+      _licWarned = true;
+      showToast('⚠️ ' + (st.paid ? 'الاشتراك' : 'الفترة التجريبية') + ' تنتهي بعد ' + st.daysLeft + ' يوم', true);
+    }
+    return st;
+  } catch(e){
+    console.warn('[License] تعذّر فحص الترخيص:', e); // لا نقفل المستخدم بسبب عطل تقني
+    return null;
+  }
+}
+async function licActivate(inputId, errId){
+  const errBox = document.getElementById(errId);
+  const input = document.getElementById(inputId);
+  errBox.style.color = '';
+  const raw = (input.value || '').replace(/\s+/g,'');
+  if(!raw){ errBox.textContent = 'الصق كود التفعيل أولاً'; return; }
+  if(!_lic) await licLoad();
+  const r = await licVerifyCode(raw);
+  if(!r.ok){ errBox.textContent = r.reason === 'sig' ? 'كود غير صالح' : 'صيغة الكود غير صحيحة (انسخه كاملاً)'; return; }
+  if(r.expiry.getTime() < Math.max(Date.now(), _lic.lastSeen || 0)){ errBox.textContent = 'هذا الكود منتهي الصلاحية'; return; }
+  if(!_lic.codes.includes(raw)) _lic.codes.push(raw);
+  await licSave();
+  const st = await licRefresh();
+  licRenderUI();
+  if(st.state === 'expired'){ errBox.textContent = 'الكود لا يمدّ الاشتراك'; return; }
+  errBox.textContent = '';
+  input.value = '';
+  licHideGate();
+  if(typeof showToast === 'function') showToast('✅ تم التفعيل حتى ' + _licDateStr(st.expiry));
+}
+async function licGateExport(){
+  const errBox = document.getElementById('licGateExportErr');
+  const pass = document.getElementById('licGatePass').value;
+  if(!pass){ errBox.textContent = 'أدخل كلمة مرور المالك'; return; }
+  const ok = data && data.ownerPasswordHash && await verifyPassword(pass, data.ownerPasswordHash, data.ownerPasswordSalt, data.ownerPasswordIterations);
+  if(!ok){ errBox.textContent = 'كلمة المرور غير صحيحة'; return; }
+  errBox.textContent = '';
+  document.getElementById('licGatePass').value = '';
+  _doExportBackup();
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'visible' && appReady) licEnforce(); });
+setInterval(()=>{ if(appReady) licEnforce(); }, 60*60*1000);
 
 /* ============================================================
    🤖 إعدادات تليجرام (v49)
@@ -2882,6 +3085,7 @@ function finishLogout(){
   resetLoginBoxes();
 }
 function enterApp(){
+  licEnforce();
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('appScreen').classList.remove('hidden');
   const who = document.getElementById('whoLabel');
@@ -8382,6 +8586,9 @@ function renderSellersList(){
 /* ---------- نسخة احتياطية ---------- */
 function exportBackup(){
   if(!currentUser || currentUser.role !== 'owner') return; // تحقق صلاحية على مستوى الدالة نفسها
+  _doExportBackup();
+}
+function _doExportBackup(){
   const backupCopy = Object.assign({}, data, { telegramBotToken: '', telegramChatId: '', syncHistory: [] }); // لا نصدّر توكن المالك
   const blob = new Blob([JSON.stringify(backupCopy, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -9923,6 +10130,7 @@ function dismissDemoBanner(){
     // لو فشل الترحيل، نكمل بالوضع القديم مؤقتاً (أفضل من صفحة بيضاء)
   }
   applyStoredTheme();
+  await licEnforce();
   appReady = true;
   console.log('[Security] ✅ التطبيق جاهز — التخزين: ' + _storageMode);
   if(_migratedFromLS && typeof showToast === 'function') showToast('✅ تم نقل بياناتك إلى التخزين الجديد (IndexedDB)');
